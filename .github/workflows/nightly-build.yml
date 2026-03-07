@@ -1,0 +1,132 @@
+name: Ascend/pytorch Nightly Build Validation
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 每天 UTC 02:00（北京时间 10:00）
+  workflow_dispatch:
+    inputs:
+      torch_nightly_date:
+        description: 'PyTorch nightly 日期 (格式: YYYYMMDD，留空使用最新版)'
+        required: false
+        default: ''
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  build:
+    name: Build torch_npu (x86, PyTorch nightly)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build \
+            gcc g++ \
+            git \
+            patchelf
+
+      - name: Install PyTorch nightly (CPU, x86_64)
+        id: install_torch
+        run: |
+          pip install --upgrade pip
+          if [ -n "${{ github.event.inputs.torch_nightly_date }}" ]; then
+            DATE="${{ github.event.inputs.torch_nightly_date }}"
+            pip install --pre \
+              "torch==2.11.0.dev${DATE}" \
+              --index-url https://download.pytorch.org/whl/nightly/cpu
+          else
+            pip install --pre torch \
+              --index-url https://download.pytorch.org/whl/nightly/cpu
+          fi
+          TORCH_VER=$(python -c "import torch; print(torch.__version__)")
+          echo "version=${TORCH_VER}" >> $GITHUB_OUTPUT
+          echo "PyTorch nightly version: ${TORCH_VER}"
+
+      - name: Clone Ascend/pytorch (with submodules)
+        id: clone_repo
+        run: |
+          git clone --depth=1 --recurse-submodules \
+            https://github.com/Ascend/pytorch.git ascend_pytorch
+          cd ascend_pytorch
+          COMMIT=$(git rev-parse HEAD)
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          COMMIT_DATE=$(git log -1 --format='%ci')
+          echo "commit=${COMMIT}" >> $GITHUB_OUTPUT
+          echo "commit_short=${COMMIT_SHORT}" >> $GITHUB_OUTPUT
+          echo "commit_date=${COMMIT_DATE}" >> $GITHUB_OUTPUT
+          echo "Ascend/pytorch commit: ${COMMIT} (${COMMIT_DATE})"
+
+      - name: Install Python build dependencies
+        run: |
+          cd ascend_pytorch
+          # 跳过 requirements.txt 中固定的 torch 版本，使用我们安装的 nightly
+          pip install pyyaml setuptools auditwheel
+
+      - name: Build torch_npu wheel
+        id: build
+        run: |
+          cd ascend_pytorch
+          # 禁用 torchair（需要额外子模块）和 RPC（简化构建）
+          export DISABLE_INSTALL_TORCHAIR=TRUE
+          export DISABLE_RPC_FRAMEWORK=TRUE
+          export BUILD_WITHOUT_SHA=1
+          python setup.py build bdist_wheel 2>&1 | tee /tmp/build.log
+          BUILD_STATUS=${PIPESTATUS[0]}
+          echo "status=${BUILD_STATUS}" >> $GITHUB_OUTPUT
+          if [ ${BUILD_STATUS} -eq 0 ]; then
+            WHL=$(ls dist/*.whl 2>/dev/null | head -1)
+            echo "wheel=${WHL}" >> $GITHUB_OUTPUT
+            echo "Build succeeded: ${WHL}"
+          fi
+          exit ${BUILD_STATUS}
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}
+          path: /tmp/build.log
+          if-no-files-found: warn
+
+      - name: Upload wheel
+        if: steps.build.outputs.status == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: torch_npu-wheel-${{ github.run_number }}
+          path: ascend_pytorch/dist/*.whl
+          if-no-files-found: warn
+
+      - name: Build summary
+        if: always()
+        run: |
+          BUILD_STATUS="${{ steps.build.outputs.status }}"
+          if [ "${BUILD_STATUS}" = "0" ]; then
+            STATUS_ICON="✅ SUCCESS"
+          else
+            STATUS_ICON="❌ FAILED"
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Ascend/pytorch Nightly Build Validation
+
+          | 项目 | 详情 |
+          |------|------|
+          | 构建时间 | $(date -u '+%Y-%m-%d %H:%M UTC') |
+          | PyTorch Nightly | \`${{ steps.install_torch.outputs.version }}\` |
+          | Ascend/pytorch Commit | [\`${{ steps.clone_repo.outputs.commit_short }}\`](https://github.com/Ascend/pytorch/commit/${{ steps.clone_repo.outputs.commit }}) |
+          | Commit 时间 | ${{ steps.clone_repo.outputs.commit_date }} |
+          | 构建结果 | ${STATUS_ICON} |
+
+          $( [ "${BUILD_STATUS}" = "0" ] && echo "> Wheel: \`${{ steps.build.outputs.wheel }}\`" || echo "> 查看 build-log artifact 获取详细错误信息" )
+          EOF
