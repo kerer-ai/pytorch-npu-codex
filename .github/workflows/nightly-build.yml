@@ -73,6 +73,26 @@ jobs:
           # 跳过 requirements.txt 中固定的 torch 版本，使用我们安装的 nightly
           pip install pyyaml setuptools auditwheel
 
+      - name: Apply compatibility patches
+        id: patch
+        run: |
+          PATCH_DIR="${GITHUB_WORKSPACE}/patches"
+          PATCH_APPLIED=""
+          PATCH_FAILED=""
+          for p in "${PATCH_DIR}"/*.patch; do
+            [ -f "$p" ] || continue
+            echo "Applying patch: $(basename $p)"
+            if git apply --directory=ascend_pytorch "$p"; then
+              echo "  ✅ OK"
+              PATCH_APPLIED="${PATCH_APPLIED} $(basename $p)"
+            else
+              echo "  ❌ FAILED (may already be merged upstream)"
+              PATCH_FAILED="${PATCH_FAILED} $(basename $p)"
+            fi
+          done
+          echo "applied=${PATCH_APPLIED}" >> $GITHUB_OUTPUT
+          echo "failed=${PATCH_FAILED}"   >> $GITHUB_OUTPUT
+
       - name: Build torch_npu wheel
         id: build
         run: |
@@ -126,6 +146,7 @@ jobs:
           | PyTorch Nightly | \`${{ steps.install_torch.outputs.version }}\` |
           | Ascend/pytorch Commit | [\`${{ steps.clone_repo.outputs.commit_short }}\`](https://github.com/Ascend/pytorch/commit/${{ steps.clone_repo.outputs.commit }}) |
           | Commit 时间 | ${{ steps.clone_repo.outputs.commit_date }} |
+          | 已应用 Patch | ${{ steps.patch.outputs.applied || '(无)' }} |
           | 构建结果 | ${STATUS_ICON} |
 
           $( [ "${BUILD_STATUS}" = "0" ] && echo "> Wheel: \`${{ steps.build.outputs.wheel }}\`" || echo "> 查看 build-log artifact 获取详细错误信息" )
