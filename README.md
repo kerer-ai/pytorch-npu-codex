@@ -41,56 +41,19 @@
 
 在 Actions 页面点击 **Run workflow**，可选填 PyTorch nightly 日期（格式 `YYYYMMDD`），留空使用最新版。
 
-## 通过 Skill 生成 workflow
+## Workflow 生成规范（给任意模型）
 
-仓库已内置 `nightly-build-workflow-generator` skill，可自动生成/更新
-`.github/workflows/nightly-build.yml`。
+本仓库提供单文件规范 [`build_skills.md`](build_skills.md)。
 
-### 快速生成
+用途：
+- 让任意模型只根据该文件生成 `.github/workflows/nightly-build.yml`
+- 明确“有 patch 则自动 apply、无 patch 则直接编译最新版”的行为
+- 固化 ccache、artifact、summary、`$GITHUB_OUTPUT` 安全写法等关键细节
 
-```bash
-python3 skills/nightly-build-workflow-generator/scripts/generate_nightly_build.py \
-  --output .github/workflows/nightly-build.yml
-```
-
-### 仅预览（不落盘）
-
-```bash
-python3 skills/nightly-build-workflow-generator/scripts/generate_nightly_build.py \
-  --print-only
-```
-
-### 常用参数
-
-- 关闭 ccache：
-```bash
-python3 skills/nightly-build-workflow-generator/scripts/generate_nightly_build.py \
-  --no-enable-ccache \
-  --output .github/workflows/nightly-build.yml
-```
-
-- 显式禁用 torchair / 强制禁用 RPC（仅在有明确需求时）：
-```bash
-python3 skills/nightly-build-workflow-generator/scripts/generate_nightly_build.py \
-  --disable-torchair \
-  --disable-rpc \
-  --output .github/workflows/nightly-build.yml
-```
-
-- 自定义 Python、调度 cron、runner：
-```bash
-python3 skills/nightly-build-workflow-generator/scripts/generate_nightly_build.py \
-  --python-version 3.11 \
-  --schedule-cron "0 2 * * *" \
-  --runner ubuntu-22.04 \
-  --output .github/workflows/nightly-build.yml
-```
-
-生成后建议执行：
-
-```bash
-gh workflow run nightly-build.yml --repo kerer-ai/pytorch-npu-codex
-```
+推荐做法：
+1. 将 `build_skills.md` 作为唯一约束输入给模型
+2. 让模型输出完整 `nightly-build.yml`
+3. 提交后手动触发一次 workflow 验证
 
 ---
 

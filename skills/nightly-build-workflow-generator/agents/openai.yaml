@@ -1,4 +1,0 @@
-interface:
-  display_name: "Nightly Build Generator"
-  short_description: "Generate nightly-build.yml for pytorch-npu compatibility CI"
-  default_prompt: "Generate or update .github/workflows/nightly-build.yml based on repository CI policy and output a runnable GitHub Actions workflow."
