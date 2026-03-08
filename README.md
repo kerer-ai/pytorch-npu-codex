@@ -18,11 +18,24 @@
 5. 执行 `python setup.py build bdist_wheel`
 6. 上传构建日志和生成的 wheel 包
 
+## 当前 CI 策略（2026-03-08 更新）
+
+- 默认启用 torchair：`DISABLE_INSTALL_TORCHAIR=FALSE`
+- 不再强制禁用 RPC：不设置 `DISABLE_RPC_FRAMEWORK=TRUE`
+- 启用 `ccache`：构建前 `restore`，构建后 `save`
+- Step Summary 额外输出 `ccache` 命中状态与命中率
+
 ## 查看结果
 
 - [Actions 页面](../../actions/workflows/nightly-build.yml) 查看每次构建状态
 - 每次运行的 Step Summary 包含 PyTorch 版本、Ascend/pytorch commit、已应用 patch 列表和构建结果
 - 构建失败时可下载 `build-log` artifact 查看详细编译错误
+
+### 结果判读要点
+
+- `Build torch_npu wheel` 成功且出现 `Build succeeded: dist/*.whl`，说明核心编译成功。
+- 如果同一 step 最后报 `Unable to process file command 'output'` / `Invalid format`，通常是 workflow 输出写法错误（`$GITHUB_OUTPUT` 格式）而非编译错误。
+- `ccache` 首次冷启动命中率低属正常；第二次开始命中率应显著提升（本仓库实测从 `0.16%` 提升到 `99.76%`）。
 
 ## 手动触发
 
@@ -68,6 +81,10 @@ CI 变红后的第一步。执行内容：
 ```
 
 **关键观察**：构建运行时长比上次更长 → 前序 patch 已生效，本次暴露新问题。
+
+**新增观察（重要）**：先区分“真实编译失败”与“CI 脚本失败”：
+- 编译失败：`error:` / `make[2]: ***` / `FAILED` 等 C/C++ 错误
+- 脚本失败：`Unable to process file command 'output'`、`Invalid format`、`set-output`/`GITHUB_OUTPUT` 相关报错
 
 ---
 
@@ -121,3 +138,16 @@ CI 变红后的第一步。执行内容：
 ```
 
 > Patch 打在 CI 临时克隆的副本上，**不修改 Ascend/pytorch 官方仓库**。
+
+---
+
+## ccache 经验沉淀
+
+- 在本仓库场景下，`ccache` 对重复构建有效，建议保留。
+- 推荐至少保留以下环境变量：
+  - `CC="ccache gcc"`
+  - `CXX="ccache g++"`
+  - `CCACHE_DIR=~/.ccache`
+  - `CCACHE_MAXSIZE=2G`
+- 不要把多行文本直接写入 `$GITHUB_OUTPUT`（会触发格式错误并导致 step 失败）。
+  - 建议输出单行指标（如 `hit_rate=99.76 %`）。

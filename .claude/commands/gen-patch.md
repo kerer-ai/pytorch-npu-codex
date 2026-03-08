@@ -100,9 +100,28 @@ gh run list --repo kerer-ai/pytorch-npu --limit 3
 - 若在同一位置失败，说明 patch 未正确应用（检查 `Apply compatibility patches` 步骤日志）
 - 若出现新的失败文件，说明上一个问题已修复，暴露了下一个兼容性问题 → 重新运行 `/analyze-failure`
 
+### 第八步：验证 CI 脚本健壮性（新增）
+
+当你修改了 workflow（例如新增 ccache 统计）时，必须检查是否引入“脚本层失败”：
+
+```bash
+gh run view <run_id> --repo kerer-ai/pytorch-npu --log-failed 2>&1 \
+  | grep -E "Unable to process file command|Invalid format|GITHUB_OUTPUT|set-output" \
+  | head -50
+```
+
+高频坑位：
+- 将多行文本直接 `echo "xxx=${MULTILINE}" >> $GITHUB_OUTPUT`
+- 未使用 heredoc 多行输出格式（`name<<EOF ... EOF`）
+
+建议：
+- 优先输出单行指标到 `$GITHUB_OUTPUT`（如 `hit_rate=99.76 %`）
+- 大段统计保留在普通日志（`ccache -s`）即可
+
 ## 注意事项
 
 - **不要修改 workflow 文件**：`patches/` 目录下的 `.patch` 文件会被 CI 自动发现并应用
+- 例外：若失败根因是 CI 脚本（`GITHUB_OUTPUT`/表达式/上传步骤），应直接修 workflow 而不是改 patch
 - **每个 patch 对应一个独立问题**：不要将多个不相关的修复合并到一个 patch
 - **patch 退役**：当 `Apply compatibility patches` 步骤显示某 patch `❌ FAILED`（apply 失败），说明上游已合入该修复，可将对应 patch 文件删除并提交
 - **本地克隆的状态**：`/root/ascend_pytorch_tmp` 中已应用的修改会在下次处理新问题时继续累积，`git diff` 始终反映相对于原始 HEAD 的全部变更

@@ -7,6 +7,10 @@
 
 如果上述信息不明确，先运行 `/analyze-failure`。
 
+> 先判断失败类型：
+> - **兼容性失败（代码/API）**：写入 `issues/` 并配套 patch
+> - **CI 脚本失败（workflow 语法/输出格式）**：优先修 workflow，通常不创建 `issues/` 兼容性条目
+
 ## 执行步骤
 
 ### 第一步：确定编号
@@ -76,3 +80,11 @@ error: 'struct X' has no member named 'Y'
 - issue 文件路径
 - 如果 patch 尚未生成，提示运行 `/gen-patch`
 - 如果 patch 已生成，提示直接运行 `/gen-patch` 的"提交验证"部分
+
+## 何时不创建 issue（新增）
+
+以下情况通常不创建 `issues/YYYY-MM-DD-NNN-*.md`：
+- 日志明确显示 wheel 已构建成功，但 step 因 `GITHUB_OUTPUT` / `Invalid format` 失败
+- artifact 上传、summary 渲染、缓存步骤等基础设施问题
+
+这类问题应直接提交 workflow 修复，并在提交信息中说明根因与影响范围。
